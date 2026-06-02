@@ -30,6 +30,15 @@ The dominant pattern is **design → implement → adversarial-review → fix**,
 | 11 | `env-ctl-phase6-daemon.js` | design → implement → 2 reviewers → fix | Local daemon: `secretd` gRPC/UDS + `SO_PEERCRED` + `secretctl`, e2e |
 | 12 | `env-ctl-phase1-store-libsql.js` | design → implement → 2 reviewers | `secrets-store-libsql` (durable libSQL `Store`, C-free-gated) |
 
+## Forward tool (not part of the build narrative)
+
+- **`envctl-merge.js`** — unify/connect/integrate env-ctl **into** `envctl`: maps both repos → exact
+  merge plan (crate moves, `[workspace.dependencies]` union incl. the HF-17 `rustix` union, CLI fold,
+  the `envctl install env-ctl` manifest component, gate union) → executes in an **isolated envctl
+  worktree branch** (build + test green, never touches master) → adversarial verify. **Edit the two
+  repo paths at the top, decide OI-1 first, then** `Workflow({scriptPath: "workflows/envctl-merge.js"})`.
+  It stages a reviewed, green branch for you to land — it does not auto-commit to envctl.
+
 ## Operating notes (what worked)
 
 - **One workflow at a time on the critical path.** Over-parallelizing tripped Anthropic's
