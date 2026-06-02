@@ -535,9 +535,11 @@ dependencies = [
  "anyhow",
  "clap",
  "envctl-secrets-proto",
+ "hyper-util",
  "serde_json",
  "tokio",
  "tonic",
+ "tower 0.5.3",
  "tracing-subscriber",
 ]
 
@@ -546,6 +548,7 @@ name = "envctl-secretd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "envctl-secrets-engine",
  "envctl-secrets-proto",
@@ -557,6 +560,7 @@ dependencies = [
  "rustix 0.38.44",
  "rustls",
  "rustls-pemfile",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tonic",
@@ -564,6 +568,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "webpki-roots 0.26.11",
+ "zeroize",
 ]
 
 [[package]]

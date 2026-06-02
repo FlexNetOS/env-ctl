@@ -29,3 +29,15 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 rustix = { workspace = true }
 clap = { workspace = true }
+# conv.rs: serde_json reads the audit detail JSON; chrono parses RFC3339 policy expiries; zeroize
+# wraps the inbound secret value + passphrase. All workspace-pinned — no NEW workspace dep.
+serde_json = { workspace = true }
+chrono = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+# the e2e test (tests/e2e.rs) constructs the engine DIRECTLY (with a fake USB seam so Mint can pass
+# its USB gate) and connects a tonic Channel over the tempdir UDS via the tower service_fn connector.
+envctl-secrets-engine = { workspace = true }
+zeroize = { workspace = true }
+chrono = { workspace = true }

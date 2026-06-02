@@ -13,6 +13,10 @@ path = "src/main.rs"
 envctl-secrets-proto = { workspace = true }
 tonic = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+# tower (service_fn) + hyper-util (TokioIo) build the classic UDS client connector for tonic's
+# Channel (which cannot bind a UDS directly). Both are workspace-pinned — no NEW workspace dep.
+tower = { workspace = true }
+hyper-util = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
