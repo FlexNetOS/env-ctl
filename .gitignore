@@ -1,0 +1,40 @@
+# --- Rust / Cargo (mirrors envctl) ---
+/target
+Cargo.lock.bak
+**/*.rs.bk
+*.swp
+.DS_Store
+
+# --- This IS the secrets subsystem: never commit key material or vault data ---
+# Private keys / certs / archives
+*.key
+*.pem
+*.crt
+*.csr
+*.der
+*.p12
+*.pfx
+*.jks
+*.kdbx
+*.age
+*.gpg
+*.asc
+
+# Encrypted-at-rest stores & databases (runtime data, never sources)
+/vault/
+/state/
+*.vault
+*.secret
+*.sqlite
+*.sqlite-*
+*.db
+*.db-shm
+*.db-wal
+
+# dotenv / injected env (allow the committed template only)
+.env
+.env.*
+!.env.example
+
+# OS keyring / agent sockets
+*.sock
