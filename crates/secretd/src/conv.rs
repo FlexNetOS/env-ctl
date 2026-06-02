@@ -4,6 +4,13 @@
 //! The two load-bearing invariants live here only as *shape*: the engine guarantees the raw bearer
 //! and any real key never enter a `SecretEvent`, so `event_to_proto` has no field to leak them
 //! through — the `RelayMinted` proto twin carries no bearer, by construction.
+//!
+//! Some conversions (the policy/method/audit-entry maps) are the TOTAL conversion surface the design
+//! specifies, but are not all reached in Phase 6 because their RPCs (`Relay.Create`, `Vault.List`,
+//! `Audit.Query`) return `Unimplemented` here — they are consumed when those paths land. We allow
+//! dead_code at module scope (mirroring the engine's own scaffold discipline) rather than delete a
+//! spec-mandated, tested-by-construction mapping.
+#![allow(dead_code)]
 use envctl_secrets::broker::{Method, Provider, RelayKind, RelayPolicy, SwapMode};
 use envctl_secrets::keyslot::Factor;
 use envctl_secrets::{AuditRecord, SecretEvent, SecretMeta};

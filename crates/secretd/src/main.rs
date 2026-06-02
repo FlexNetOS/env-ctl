@@ -19,19 +19,13 @@
 //! `mlockall` is deferred to a follow-up. This is the ONE place the in-process `mlockall` cannot be
 //! honored as written; the systemd unit's `LimitMEMLOCK=infinity` / `LimitCORE=0` cover it as
 //! defense-in-depth.
-mod audit;
-mod conv;
-mod grpc;
-mod peercred;
-mod proxy;
-mod server;
-
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use anyhow::Context;
 use envctl_secrets::paths::Paths;
 use envctl_secrets::Engine;
+use envctl_secretd::{peercred, server};
 use rustix::process::{setrlimit, Resource, Rlimit};
 
 fn main() -> anyhow::Result<()> {
@@ -151,6 +145,14 @@ async fn bind_uds(sock: &Path) -> anyhow::Result<tokio::net::UnixListener> {
             }
         }
     }
+    // NOTE (bind/chmod window): `bind` creates the socket with a umask-governed mode and the tighten
+    // to 0600 is a SEPARATE call below, so for the window between the two the socket may be
+    // group/other-readable. The LOAD-BEARING WALL during that window is the parent runtime dir, which
+    // `ensure_dir_0700` created 0700 BEFORE this bind: a non-owner cannot traverse into it to reach
+    // the socket, and the SO_PEERCRED `OwnerGuard` would deny on uid regardless. (A `umask(0o077)`
+    // guard would close the window correct-by-construction at the socket level, but `rustix::umask`
+    // needs the `fs` feature, which is not in the pinned feature set — no new deps, so we rely on the
+    // 0700 dir + chmod here.)
     let listener = tokio::net::UnixListener::bind(sock)
         .with_context(|| format!("binding {}", sock.display()))?;
     std::fs::set_permissions(sock, std::fs::Permissions::from_mode(0o600))

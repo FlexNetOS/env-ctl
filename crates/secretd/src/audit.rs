@@ -24,12 +24,20 @@ pub type EventStream = ReceiverStream<Result<envctl_secrets_proto::v1::Event, St
 /// `SecretEvent`s are converted via `conv::event_to_proto` (variants with no proto twin are filtered
 /// out). A setup-time `Err` from the engine is surfaced as a terminal `Err(Status)` item on the
 /// stream so the client observes the failure.
+///
+/// PANIC SAFETY: if the engine call PANICS inside the blocking task, the task's `out_tx` clone is
+/// dropped WITHOUT pushing a terminal item. A supervising task awaits the `JoinHandle` and, on a
+/// `JoinError` (panic/cancel), pushes a terminal `Err(Status::internal(...))`, so a streaming RPC
+/// surfaces an engine panic as an error rather than masking it as a clean empty-success stream.
 pub fn run_streaming<F>(engine: Engine, f: F) -> EventStream
 where
     F: FnOnce(&Engine, &EventSink) -> anyhow::Result<()> + Send + 'static,
 {
     let (out_tx, out_rx) = tokio::sync::mpsc::channel::<Result<_, Status>>(64);
-    tokio::task::spawn_blocking(move || {
+    // The supervisor keeps its own sender clone so it can emit a terminal error even if the blocking
+    // task panicked before sending anything (its own clone is then already dropped).
+    let sup_tx = out_tx.clone();
+    let handle = tokio::task::spawn_blocking(move || {
         let (sink, rx) = EventSink::channel();
         // Run the engine call; it emits all of its events synchronously before returning.
         let result = f(&engine, &sink);
@@ -46,6 +54,17 @@ where
         // A setup-time engine error becomes a terminal stream error.
         if let Err(e) = result {
             let _ = out_tx.blocking_send(Err(Status::internal(e.to_string())));
+        }
+    });
+    // Observe the join: a panic (or cancellation) of the blocking task is reported as a terminal
+    // stream error so the client never mistakes a crashed engine call for an empty success.
+    tokio::spawn(async move {
+        if let Err(join_err) = handle.await {
+            let _ = sup_tx
+                .send(Err(Status::internal(format!(
+                    "streaming engine task failed: {join_err}"
+                ))))
+                .await;
         }
     });
     ReceiverStream::new(out_rx)

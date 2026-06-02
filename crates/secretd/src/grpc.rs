@@ -87,17 +87,19 @@ impl v1::vault_server::Vault for VaultSvc {
 
         match res {
             Ok(value) => {
-                let revealed = reveal && !value.is_empty();
-                let meta = Some(v1::SecretMeta {
-                    name: req.name,
-                    provider: 0,
-                    created_at: String::new(),
-                    version: 0,
-                    note: String::new(),
-                    broker_only: false,
-                });
+                // The engine bails (Err) for BOTH a broker_only reveal and a `reveal && !apply`
+                // dry-run, so reaching `Ok` with `reveal == true` means an APPLIED, allowed reveal
+                // (apply was folded above and enforced by the engine). `revealed` therefore tracks
+                // `reveal` directly — NOT value-emptiness — so a genuinely zero-length secret still
+                // reports `revealed = true` on a successful reveal. The value is forwarded as-is on a
+                // reveal and is the engine's empty buffer on a non-reveal (metadata-only) read.
+                let revealed = reveal;
+                // Phase 6 honesty: the engine exposes no public metadata read path, so we report
+                // `meta: None` rather than fabricating all-false fields (which would misleadingly
+                // claim broker_only=false / version=0 for an unknown secret). A real metadata
+                // accessor populates this when it lands.
                 Ok(Response::new(v1::GetSecretResp {
-                    meta,
+                    meta: None,
                     value: if revealed { value.to_vec() } else { Vec::new() },
                     revealed,
                 }))
@@ -324,6 +326,8 @@ impl v1::lock_server::Lock for LockSvc {
 
 #[derive(Clone)]
 pub struct AuditSvc {
+    // Held for when Audit.Query is wired to a public engine read path (Phase 6: Unimplemented).
+    #[allow(dead_code)]
     pub engine: Engine,
 }
 
@@ -346,6 +350,8 @@ impl v1::audit_server::Audit for AuditSvc {
 
 #[derive(Clone)]
 pub struct CertsSvc {
+    // Held for when the CA path (ca_issue etc.) is wired (Phase 4+: all Unimplemented).
+    #[allow(dead_code)]
     pub engine: Engine,
 }
 

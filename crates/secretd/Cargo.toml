@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "envctl_secretd"
+path = "src/lib.rs"
+
 [[bin]]
 name = "secretd"
 path = "src/main.rs"
@@ -41,3 +45,5 @@ zeroize = { workspace = true }
 envctl-secrets-engine = { workspace = true }
 zeroize = { workspace = true }
 chrono = { workspace = true }
+# the test impls the engine's `Upstream` trait, whose `send` is declared with #[async_trait].
+async-trait = { workspace = true }

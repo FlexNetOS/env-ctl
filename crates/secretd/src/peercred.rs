@@ -37,14 +37,22 @@ impl OwnerGuard {
 
 impl Interceptor for OwnerGuard {
     fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
-        let info = req
-            .extensions()
-            .get::<UdsConnectInfo>()
-            .ok_or_else(|| Status::permission_denied("no peer credentials"))?;
-        let cred = info
-            .peer_cred
-            .ok_or_else(|| Status::permission_denied("no SO_PEERCRED"))?;
+        // Each rejection is logged at WARN so repeated denials (a non-owner local uid probing the
+        // socket) are observable in the daemon log; the rejection still happens BEFORE any handler.
+        let info = req.extensions().get::<UdsConnectInfo>().ok_or_else(|| {
+            tracing::warn!("peercred deny: no UdsConnectInfo (non-UDS transport?)");
+            Status::permission_denied("no peer credentials")
+        })?;
+        let cred = info.peer_cred.ok_or_else(|| {
+            tracing::warn!("peercred deny: no SO_PEERCRED on the connection");
+            Status::permission_denied("no SO_PEERCRED")
+        })?;
         if cred.uid() != self.owner_uid {
+            tracing::warn!(
+                peer_uid = cred.uid(),
+                owner_uid = self.owner_uid,
+                "peercred deny: uid mismatch"
+            );
             return Err(Status::permission_denied("uid mismatch"));
         }
         Ok(req)
