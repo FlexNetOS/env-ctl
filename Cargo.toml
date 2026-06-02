@@ -45,8 +45,11 @@ webpki-roots = "0.26"   # explicit frozen Mozilla roots for upstream egress (nev
 # (no libsql row — the no-C CI gate `! cargo tree | grep libsql-ffi` must pass)
 
 # ---- crypto (engine; pure-Rust, no C/SQLCipher) ----
-chacha20poly1305 = "0.10"
-argon2 = "0.5"
+chacha20poly1305 = { version = "0.10", features = ["alloc", "getrandom", "rand_core"] }
+# `zeroize` feature (off in argon2's default set) wipes the Block memory arena + hash
+# intermediates on drop so a passphrase-derived 256 MiB-1 GiB scratch buffer is not left in
+# freed heap after each unlock (research/02-argon2id-keyslots.md §RAM hygiene; keyslot.rs HF-S).
+argon2 = { version = "0.5", features = ["zeroize"] }
 hkdf = "0.12"
 sha2 = "0.10"
 blake3 = "1.5"
