@@ -1,7 +1,10 @@
-//! Storage backend behind a `Store` trait (OI-1). libSQL was REOPENED because the `libsql` crate
-//! bundles a C SQLite (`libsql-ffi`), which violates the pure-Rust / no-C tenet; the no-C CI gate
-//! (`! cargo tree | grep libsql-ffi`) must pass. Phase 0 ships only `InMemStore`; the chosen
-//! pure-Rust durable backend lands in Phase 1.
+//! Storage backend behind a `Store` trait. OI-1 RESOLVED = libSQL (NEW-3, see docs/SERVER-MODE.md):
+//! its server/replica/sync serves remote clients. libSQL + its bundled C SQLite (`libsql-ffi`) are
+//! QUARANTINED in `crates/secrets-store-libsql`, consumed ONLY by secretd behind THIS trait — the
+//! engine lib NEVER links libSQL, so the per-crate no-C gate
+//! (`! cargo tree -p envctl-secrets-engine | grep libsql-ffi`) stays green. Encryption happens ABOVE
+//! this trait (ciphertext + non-secret metadata only). Phase 0 ships only `InMemStore`; the libSQL
+//! backend lands in Phase 1 in the store crate, C-isolated.
 #[cfg(not(feature = "inmem-store"))]
 compile_error!("select a store backend feature (`inmem-store`, or the OI-1-ruled pure-Rust backend)");
 

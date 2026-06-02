@@ -40,9 +40,13 @@ http-body-util = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream"] }
 webpki-roots = "0.26"   # explicit frozen Mozilla roots for upstream egress (never OS store / local CA)
 
-# ---- store: backend behind a Store trait. libSQL is REOPENED (OI-1: it bundles C SQLite). Phase 0
-# ---- ships only the inmem-store impl; the chosen pure-Rust backend lands in Phase 1 per the ruling.
-# (no libsql row — the no-C CI gate `! cargo tree | grep libsql-ffi` must pass)
+# ---- store: backend behind a Store trait. OI-1 RESOLVED = libSQL (NEW-3): its server/replica/sync is
+# ---- the required remote-serving feature. libSQL + its bundled C SQLite are QUARANTINED in the new
+# ---- `crates/secrets-store-libsql` crate (consumed ONLY by secretd, behind the engine `Store` trait);
+# ---- the engine workspace member stays pure-Rust. Phase 0 still ships only inmem-store; the libSQL
+# ---- backend lands in Phase 1 in the store/daemon layer, C-isolated.
+# ---- CI gate is now per-crate: `! cargo tree -p envctl-secrets-engine | grep libsql-ffi` MUST pass
+# ---- (engine green); the libsql row lives in secrets-store-libsql only (documented, scoped waiver).
 
 # ---- crypto (engine; pure-Rust, no C/SQLCipher) ----
 chacha20poly1305 = { version = "0.10", features = ["alloc", "getrandom", "rand_core"] }

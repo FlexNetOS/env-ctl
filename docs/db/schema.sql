@@ -1,10 +1,14 @@
 -- env-ctl vault schema — CANONICAL LOGICAL MODEL.
 --
--- REVIEW FIX (CF-1 / OI-1): libSQL was VERIFIED to bundle C SQLite (libsql-ffi/bundled/src/sqlite3.c),
--- which violates locked decisions 1 & 3 ("NO C deps"). This file is the canonical *logical* schema.
--- The execution backend is an OPEN ITEM awaiting an operator ruling: (a) a pure-Rust embedded store
--- (e.g. redb) expressing these tables as typed keyspaces; or (b) an explicit no-C waiver to keep SQL.
--- All BLOB bodies are app-encrypted (XChaCha20-Poly1305) regardless of backend.
+-- OI-1 RESOLVED (NEW-3, SERVER-MODE.md): the execution backend IS libSQL (its server/replica/sync is
+-- the required remote-serving feature; a pure-Rust local-only store like redb cannot serve remote
+-- clients). libSQL bundles C SQLite (libsql-ffi/bundled/src/sqlite3.c, VERIFIED) under an ACCEPTED,
+-- SCOPED waiver: ALL libSQL lives ONLY in the new `secrets-store-libsql` crate behind the engine's
+-- `Store` trait; the engine LIB stays pure-Rust. The C core is ISOLATED (recommended: embedded sqld
+-- on loopback + secretd's pure-Rust `remote` client; in-process embedded only with a recorded risk
+-- acceptance). This file is the canonical *logical* schema for both deployment profiles.
+-- All BLOB bodies are app-encrypted (XChaCha20-Poly1305) regardless of backend; libSQL's built-in
+-- at-rest encryption is NEVER relied upon (app-AEAD is authoritative; sqld = untrusted storage).
 --
 -- If SQL is ruled: PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON.
 -- All BLOB bodies are app-encrypted; NO plaintext secret, NO DEK, NO unlock key, NO hmac_key on disk.
