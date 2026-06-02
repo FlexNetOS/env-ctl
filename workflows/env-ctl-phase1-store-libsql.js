@@ -1,0 +1,32 @@
+export const meta = {
+  name: 'env-ctl-phase1-store-libsql',
+  description: 'Implement the secrets-store-libsql crate (Store trait over a libSQL remote client), PROVE C-free via cargo tree, never break the 97-test green workspace',
+  phases: [
+    { title: 'Design', detail: 'libsql remote API + Store->SQL mapping per schema.sql' },
+    { title: 'Implement', detail: 'create the crate, build, run the C-free gate, report honestly' },
+    { title: 'Review', detail: 'verify mapping + C-free gate + workspace still green' },
+  ],
+}
+const REPO = '/home/drdave/Desktop/env-ctl'
+const RULES = `Workspace = ${REPO}. Stable Rust, MSRV 1.80. The engine (envctl-secrets-engine) + daemon + the 97 passing tests MUST stay green and the engine MUST stay C-free/async-free — do NOT modify the engine or daemon crates. The new crate consumes ONLY the engine's public Store trait + row types (envctl_secrets::vault::{Store, SecretRow, RelayPolicyRow, BearerRow, CertRow}, AuditRecord, Keyslot). HARD GATE (audit F1): the store crate MUST be proven C-free in remote mode — run \`cargo tree -p envctl-secrets-store-libsql --no-default-features --features remote\` (or the crate's equivalent) and grep for libsql-ffi/libsql-sys/sqlite3-sys; it MUST find NOTHING. If the libsql crate's remote-only feature is NOT C-free, try the separate libsql-client + libsql-hrana crates. If NO pure-Rust remote path exists, DO NOT add the crate to [workspace.members]; instead leave it out of the workspace, document the blocker + the scoped-waiver decision in the crate's own README, and KEEP the workspace green. Be HONEST about what compiles vs what is runtime-untestable without a running sqld.`
+
+const DSCHEMA = { type: 'object', additionalProperties: false, properties: {
+  libsql_api: { type: 'string', description: 'the exact libsql remote client API (Builder::new_remote / Database::connect / Connection::execute+query, params, prepared stmts, transactions, auth token) at the current crate version, AND the verified C-purity story of the remote-only feature graph (cite docs.rs feature graph). If remote-only is not pure, the libsql-client + libsql-hrana alternative.' },
+  store_mapping: { type: 'string', description: 'how each Store trait method maps to SQL over schema.sql (meta KV, secrets/secret_versions with version monotonicity, keyslots, audit hash-chain append/verify/query, relay_policies/bearers, certs). How the SecretRow/Keyslot/AuditRecord types serialize to/from rows (ciphertext + non-secret metadata ONLY; no DEK/plaintext). Async libsql vs the sync Store trait: the impl runs a private current-thread tokio runtime (block_on) inside each &self method so the trait stays sync (the daemon already calls Store on spawn_blocking).' },
+  crate_layout: { type: 'string', description: 'crates/secrets-store-libsql/{Cargo.toml, src/lib.rs}; package envctl-secrets-store-libsql; deps (libsql remote OR libsql-client+libsql-hrana, tokio current-thread, anyhow, serde_json, the engine); the exact features; how/whether it joins [workspace.members] + [workspace.dependencies]; the CI cargo-tree C-free gate command.' },
+}, required: ['libsql_api', 'store_mapping', 'crate_layout'] }
+const FSCHEMA = { type: 'object', additionalProperties: false, properties: { lens: { type: 'string' }, findings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] }, issue: { type: 'string' }, fix: { type: 'string' }, confidence: { type: 'string', enum: ['high', 'medium', 'low'] } }, required: ['severity', 'issue', 'fix', 'confidence'] } } }, required: ['lens', 'findings'] }
+
+phase('Design')
+const design = await agent(`Design the env-ctl secrets-store-libsql crate. Read ${REPO}/crates/secrets-engine/src/vault/store.rs (the Store trait + row types you must implement), ${REPO}/docs/db/schema.sql (the SQL model), ${REPO}/docs/research/03-libsql-server.md, ${REPO}/docs/ops/02-envctl-component.md, and ${REPO}/docs/SERVER-MODE.md (the F1 C-isolation gate). Use the web to confirm the CURRENT libsql remote-client API + whether remote-only is C-free (this is the load-bearing unknown). Produce the design per schema.\n\n${RULES}`, { label: 'design', phase: 'Design', agentType: 'Explore', schema: DSCHEMA })
+
+phase('Implement')
+const impl = await agent(`Implement the secrets-store-libsql crate per the DESIGN below. Create ${REPO}/crates/secrets-store-libsql/Cargo.toml and src/lib.rs implementing envctl_secrets::vault::Store over the libsql remote client (sync trait wrapping a private current-thread tokio block_on). Add the crate + dep to the root ${REPO}/Cargo.toml ONLY IF it builds C-free. Then RUN and REPORT: (1) cargo build -p envctl-secrets-store-libsql; (2) the C-free gate cargo tree grep for libsql-ffi/libsql-sys/sqlite3-sys (MUST be empty); (3) cargo build --workspace and cargo test -p envctl-secrets-engine (the 97 tests MUST still pass). If remote-only is NOT C-free and no pure-Rust alternative works, do NOT add it to [workspace.members] — write crates/secrets-store-libsql/README.md documenting the blocker + the decision, and confirm the existing workspace stays green. Runtime tests need a real sqld; mark them #[ignore] with a doc comment on how to run them. Report exact command outputs.\n\nDESIGN (JSON):\n${JSON.stringify(design)}\n\n${RULES}`, { label: 'implement', phase: 'Implement' })
+
+phase('Review')
+const reviews = (await parallel([0, 1].map((i) => () =>
+  agent(`Adversarially review the env-ctl secrets-store-libsql crate (lens ${i === 0 ? 'C-free gate + workspace-green honesty: did the C-free cargo-tree gate ACTUALLY pass (verify the claim, do not trust it); is the engine still C-free; do the 97 tests still pass; if C is present, is the workspace-members exclusion + documentation correct and the workspace still green?' : 'Store->SQL correctness: does each trait method map to correct parameterized SQL over schema.sql; is version-monotonicity enforced; is the audit hash-chain append/verify faithful; does the store ever see a DEK/plaintext (it must NOT); is the sync-wrapping-async block_on sound (no nested-runtime panic when called from the daemon spawn_blocking)?'}). Read ${REPO}/crates/secrets-store-libsql/* and the engine Store trait. Concrete flaws + fixes; default to reporting when uncertain.\n\nIMPLEMENT REPORT:\n${impl}`, { label: 'review:' + i, phase: 'Review', schema: FSCHEMA })
+))).filter(Boolean)
+
+log('secrets-store-libsql crate workflow done.')
+return { design, impl, reviews }

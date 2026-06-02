@@ -1,0 +1,41 @@
+export const meta = {
+  name: 'env-ctl-phase6-daemon',
+  description: 'Local control-plane daemon: secretd tonic gRPC over UDS + SO_PEERCRED + engine bridge + proto<->event conv, and secretctl dispatch, with an end-to-end test',
+  phases: [
+    { title: 'Design', detail: 'lock the tonic-UDS server, sync-engine bridge, peercred, conversions, e2e test plan' },
+    { title: 'Implement', detail: 'one implementer wires secretd + secretctl end-to-end' },
+    { title: 'Review', detail: '2 reviewers (peercred/authz + key-leak; compile/e2e)' },
+    { title: 'Fix', detail: 'fold fixes; build + e2e test green' },
+  ],
+}
+const REPO = '/home/drdave/Desktop/env-ctl'
+const RULES = `Workspace = ${REPO}. Stable Rust, MSRV 1.80. Use ONLY workspace deps already pinned: tokio 1.43, tonic 0.12, prost 0.13, tower 0.5, hyper 1.5, hyper-util 0.1, http-body-util 0.1, rustix (process,net,time), clap 4.5, anyhow, thiserror, tracing, tracing-subscriber, serde_json. The engine crate envctl-secrets-engine stays UNTOUCHED — consume only its PUBLIC API (Engine is Clone + Send + Sync via Arc; methods are SYNC except relay_swap; it emits SecretEvent over an std::sync::mpsc channel via EventSink). secrets-proto is generated from proto/control.proto (services Vault/Relay/Certs/Lock/Audit; the Event oneof mirrors SecretEvent). DO NOT add new deps. DO NOT weaken any engine invariant (esp. secret_get reveal gating + broker_only refusal; the real key never crosses an RPC).`
+
+const DSCHEMA = { type: 'object', additionalProperties: false, properties: {
+  server: { type: 'string', description: 'how secretd serves tonic gRPC over a tokio UnixListener (UDS at Paths::control_socket(), 0600, dir 0700), incl. graceful bind/remove-stale-socket; how the async tonic handlers call the SYNC engine (direct call vs tokio::task::spawn_blocking on the cloned Engine); how a streaming-event RPC forwards the engine EventSink mpsc Receiver into the tonic response stream (drain on a blocking task -> tokio mpsc -> ReceiverStream).' },
+  peercred: { type: 'string', description: 'the SO_PEERCRED owner-only check: read ucred (uid) from the accepted UnixStream via rustix getsockopt; reject uid != owner_uid with Status::permission_denied BEFORE any engine call; where it sits (tower layer/interceptor or per-connection).' },
+  conversions: { type: 'string', description: 'proto<->engine conversions: SecretEvent -> proto Event (oneof), proto enums <-> Provider/Method, proto requests -> engine args (SecretMeta, RelayPolicy, Unlock), and the apply/confirm dry-run gating mapping. Where conv lives.' },
+  services: { type: 'string', description: 'which RPCs are wired to the engine now (Lock.Status/Unlock/LockNow; Vault.Add/Get/List/Rm/Rotate; Relay.Create/Revoke/RevokeBearer/List/Mint; Audit.Query) and which return Unimplemented for now (Certs.*, the relay-swap DATA plane, remote edge — Phase 8). How an init-vault path is reached (first-run bootstrap or a verb) so the e2e test can unlock.' },
+  cli_and_test: { type: 'string', description: 'secretctl: connect to the UDS, dispatch the clap verbs to the RPCs, drain+render the Event stream (and --json NDJSON). The end-to-end test: spawn the server on a tempdir UDS, init+unlock the vault, then add a secret, get its metadata, list, create a relay + mint a bearer, query audit — asserting results AND that a reveal of a broker_only secret is refused and the real key never appears on the wire.' },
+}, required: ['server', 'peercred', 'conversions', 'services', 'cli_and_test'] }
+const FSCHEMA = { type: 'object', additionalProperties: false, properties: { lens: { type: 'string' }, findings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] }, issue: { type: 'string' }, fix: { type: 'string' }, confidence: { type: 'string', enum: ['high', 'medium', 'low'] } }, required: ['severity', 'issue', 'fix', 'confidence'] } } }, required: ['lens', 'findings'] }
+
+phase('Design')
+const design = await agent(`Design the env-ctl LOCAL control-plane daemon (Phase 6, no remote edge). Read ${REPO}/crates/secretd/src/*, ${REPO}/crates/secretctl/src/*, ${REPO}/crates/secrets-proto/{proto/control.proto,src/lib.rs}, the engine public API in ${REPO}/crates/secrets-engine/src/lib.rs, and ${REPO}/docs/research/06-grpc-uds-peercred.md + ${REPO}/docs/ops/01-systemd-hardening.md. Produce the design per schema — exact, buildable on tonic 0.12. Scope: gRPC control plane over UDS bridged to the engine; Certs + relay-swap data plane + remote edge are out (return Unimplemented / stay todo!()).\n\n${RULES}`, { label: 'design', phase: 'Design', schema: DSCHEMA })
+
+phase('Implement')
+const impl = await agent(`Implement the LOCAL daemon per the DESIGN below as one coherent change (Read each file first, then Write):\n- ${REPO}/crates/secretd/src/main.rs: tokio main — install rustls ring provider if needed (not for UDS), build Engine::open(Paths::resolve()), first-run bootstrap to init_vault if no vault, bind the UDS (0600), serve tonic with the peercred layer; graceful shutdown.\n- ${REPO}/crates/secretd/src/grpc.rs: impl the Lock/Vault/Relay/Audit tonic service traits, bridging to the engine (spawn_blocking for sync engine calls; forward the EventSink mpsc into a tonic ReceiverStream for streaming RPCs). Certs returns Unimplemented.\n- ${REPO}/crates/secretd/src/peercred.rs: the SO_PEERCRED owner-only check via rustix.\n- ${REPO}/crates/secretd/src/conv.rs (new; declare mod): proto<->engine + SecretEvent->proto Event conversions.\n- ${REPO}/crates/secretd/src/audit.rs: event drain/forward as needed.\n- ${REPO}/crates/secretctl/src/{main.rs,cli.rs,render.rs}: connect to the UDS, dispatch verbs, render events / --json.\n- an end-to-end test ${REPO}/crates/secretd/tests/e2e.rs (#[tokio::test]): server on a tempdir UDS + client round-trips per the design (unlock, secret add/get/list, relay create/mint, audit query; assert broker_only reveal refused; assert no real key on the wire).\nKeep the engine + its 94 tests untouched. Build the WORKSPACE green.\n\nDESIGN (JSON):\n${JSON.stringify(design)}\n\n${RULES}`, { label: 'implement', phase: 'Implement' })
+
+phase('Review')
+const LENSES = [
+  `Authz + key-leak: is the SO_PEERCRED owner check applied to EVERY RPC before any engine call (reject uid != owner)? Can a non-owner local uid reach any service? Does the daemon ever put a real secret value on the wire (secret_get reveal must stay apply+confirm-gated and broker_only-refused; relay bearer mint returns the bearer but NEVER the real key; relay-swap data plane is out)? Is the UDS created 0600 in a 0700 dir, stale socket removed safely?`,
+  `Correctness + compile/e2e: does it build on tonic 0.12 with the pinned deps (no new deps)? Is the sync-engine-from-async bridge sound (spawn_blocking on the cloned Engine; no blocking the reactor; no deadlock forwarding the mpsc)? Are proto<->engine conversions total (all enums/oneof arms)? Does the e2e test actually exercise the UDS gRPC path and assert real behavior (not trivially pass)? Engine + its 94 tests untouched?`,
+]
+const reviews = (await parallel(LENSES.map((l, i) => () =>
+  agent(`Adversarially review the env-ctl local daemon through this lens:\n${l}\nRead the implemented files under ${REPO}/crates/secretd/src/, secretctl/src/, and tests/e2e.rs. Concrete flaws plus fixes; default to reporting when uncertain.\n\nIMPLEMENT NOTES:\n${impl}`, { label: 'review:' + i, phase: 'Review', schema: FSCHEMA })
+))).filter(Boolean)
+
+phase('Fix')
+const fixed = await agent(`Finalize the env-ctl local daemon: read the files + review findings, apply confirmed fixes, and ensure the WORKSPACE builds and the engine 94 tests + the new secretd e2e test pass. Peercred owner-only on every RPC; no real key on the wire; no new deps; engine untouched.\nFiles: ${REPO}/crates/secretd/src/{main.rs,grpc.rs,peercred.rs,conv.rs,audit.rs}, ${REPO}/crates/secretctl/src/{main.rs,cli.rs,render.rs}, ${REPO}/crates/secretd/tests/e2e.rs.\n\nFINDINGS (JSON):\n${JSON.stringify(reviews)}\n\n${RULES}`, { label: 'fix', phase: 'Fix' })
+log('Phase-6 local daemon implemented + reviewed + fixed.')
+return { design, impl, reviews, fixed }
